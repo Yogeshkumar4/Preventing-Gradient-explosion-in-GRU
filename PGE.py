@@ -24,6 +24,7 @@ class Config(object):
 	hidden_size = 650
 	max_epoch = 10
 	max_max_epoch = 75
+	max_grad_norm = 5
 	keep_prob = 0.5
 	lr_decay = 1.1
 	batch_size = 20
@@ -75,7 +76,12 @@ class PGEModel(object):
 
 		self._lr = tf.Variable(0.0, trainable=False)
 
-		self._train_op = tf.train.GradientDescentOptimizer(self._lr).minimize(self._cost)	
+		tvars = tf.trainable_variables()
+		grads, _ = tf.clip_by_global_norm(tf.gradients(self._cost, tvars), config.max_grad_norm)
+		optimizer = tf.train.GradientDescentOptimizer(self._lr)
+		self._train_op = optimizer.apply_gradients(zip(grads, tvars),global_step=tf.train.get_or_create_global_step())
+
+		# self._train_op = tf.train.GradientDescentOptimizer(self._lr).minimize(self._cost)	
 		self._new_lr = tf.placeholder(
 			tf.float32, shape=[], name="new_learning_rate")
 		self._lr_update = tf.assign(self._lr, self._new_lr)
@@ -108,11 +114,11 @@ class PGEModel(object):
 		#                            initial_state=self._initial_state)
 		outputs = []
 		with tf.variable_scope("RNN"):
-		  for time_step in range(self.num_steps):
-			if time_step > 0: tf.get_variable_scope().reuse_variables()
-			t_inp = inputs[:, time_step, :]
-			(cell_output, state) = cell(t_inp, state)
-			outputs.append(cell_output)
+			for time_step in range(self.num_steps):
+				if time_step > 0: tf.get_variable_scope().reuse_variables()
+				t_inp = inputs[:, time_step, :]
+				(cell_output, state) = cell(t_inp, state)
+				outputs.append(cell_output)
 		output = tf.reshape(tf.concat(outputs, 1), [-1, config.hidden_size])
 		return output, state	
 
