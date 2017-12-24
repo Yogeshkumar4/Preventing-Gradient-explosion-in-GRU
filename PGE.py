@@ -251,8 +251,11 @@ def run_epoch(session, model, config, eval_op=None, verbose=False):
 		cost = vals["cost"]
 		state = vals["final_state"]
 
-		w = vals["w_hh"]
-		index = vals["index"]
+		try:
+			w = vals["w_hh"]
+			index = vals["index"]
+		except KeyError:
+			index = 0	
 		# print(vals["s"][:10])
 		# print(cost)
 		if index > 0:
