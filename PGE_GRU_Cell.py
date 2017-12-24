@@ -13,7 +13,7 @@ class PGE_GRUCell(tf.contrib.rnn.RNNCell):
 	def __init__(self, num_units, inp_size):
 		self.num_units = num_units
 		self.inp_size = inp_size
-		s, self.u, v = tf.svd(tf.random_normal([self.num_units, self.num_units]), full_matrices=True)
+		self.s, self.u, v = tf.svd(tf.random_normal([self.num_units, self.num_units]), full_matrices=True)
 
 	@property
 	def output_size(self):
@@ -31,6 +31,8 @@ class PGE_GRUCell(tf.contrib.rnn.RNNCell):
 			W_hr = tf.get_variable('W_hr', initializer=tf.random_normal([self.num_units, self.num_units], stddev = 1.0/650))
 			W_xh = tf.get_variable('W_xh', initializer=tf.random_normal([self.num_units, self.inp_size], stddev = 1.0/650))	
 			W_hh = tf.get_variable('W_hh', initializer=self.u)
+			W_hh_last = tf.get_variable('W_hh_last', initializer=self.u, trainable=False)
+			sing_val = tf.get_variable('s', initializer=self.s, trainable=False)
 
 		zt = tf.sigmoid(tf.matmul(inputs, W_xz) + tf.matmul(state, W_hz))
 		rt = tf.sigmoid(tf.matmul(inputs, W_xr) + tf.matmul(state, W_hr))

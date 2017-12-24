@@ -3,6 +3,7 @@ from scipy.sparse.linalg import svds
 from PGE_GRU_Cell import PGE_GRUCell
 import reader
 import numpy as np
+from scipy.sparse.linalg import svds
 import time
 
 class PTBInput(object):
@@ -29,7 +30,7 @@ class Config(object):
 	lr_decay = 1.1
 	batch_size = 20
 	vocab_size = 10000
-
+	threshold = 1.8
 
 class PGEModel(object):
 	def __init__(self, is_training, config, input_):
@@ -51,6 +52,9 @@ class PGEModel(object):
 			inputs = tf.nn.dropout(inputs, config.keep_prob)
 
 		output, state = self._build_rnn_graph_gru(inputs, config, is_training)
+
+		if is_training and config.keep_prob < 1:
+			output = tf.nn.dropout(output, config.keep_prob)
 
 		softmax_w = tf.get_variable(
 			"softmax_w", [size, vocab_size], dtype=tf.float32)
@@ -77,14 +81,41 @@ class PGEModel(object):
 		self._lr = tf.Variable(0.0, trainable=False)
 
 		tvars = tf.trainable_variables()
-		grads, _ = tf.clip_by_global_norm(tf.gradients(self._cost, tvars), config.max_grad_norm)
+		grads = tf.gradients(self._cost, tvars)
 		optimizer = tf.train.GradientDescentOptimizer(self._lr)
 		self._train_op = optimizer.apply_gradients(zip(grads, tvars),global_step=tf.train.get_or_create_global_step())
 
-		# self._train_op = tf.train.GradientDescentOptimizer(self._lr).minimize(self._cost)	
-		self._new_lr = tf.placeholder(
-			tf.float32, shape=[], name="new_learning_rate")
-		self._lr_update = tf.assign(self._lr, self._new_lr)
+		with tf.variable_scope('RNN/multi_rnn_cell/cell_0/PGE_GRUCell') as scope:
+			scope.reuse_variables()
+			self._w_hh = tf.get_variable('W_hh', [config.hidden_size, config.hidden_size])
+			w_hh_last = tf.get_variable('W_hh_last', [config.hidden_size, config.hidden_size])
+			grad = tf.subtract(w_hh_last, self._w_hh)
+			w_grads = tf.scalar_mul(1/self._lr, grad)
+			self._s = tf.get_variable('s', [config.hidden_size])
+			# s = tf.Print(s, [s])
+			self._f_norm = self._lr*tf.norm(w_grads, ord='fro', axis=(0,1))
+			v_norm = tf.scalar_mul(self._f_norm - config.threshold, tf.ones([config.hidden_size]))
+			s_est = tf.add(v_norm, self._s)
+			self._index = tf.count_nonzero(tf.sign(s_est) + 1)
+			# f_norm = tf.norm(w_grads, ord='fro', axis=(0,1))
+			# w_hh = self.modify_w_hh(w_hh, w_grads, s, self._lr, config)
+			# self.change_w_hh = w_hh
+			# self._train_op = tf.train.GradientDescentOptimizer(self._lr).minimize(self._cost)	
+			self._new_lr = tf.placeholder(
+				tf.float32, shape=[], name="new_learning_rate")
+			self._lr_update = tf.assign(self._lr, self._new_lr)
+
+			# with tf.variable_scope('PGE_GRUCell'):
+			# 	w_hh = tf.get_variable('W_hh', [config.hidden_size, config.hidden_size])
+			# 	s = tf.get_variable('s', [config.hidden_size])
+			self._w_hh_last_update = tf.assign(w_hh_last, self._w_hh)
+			self._new_w_hh = tf.placeholder(
+				tf.float32, shape=[config.hidden_size, config.hidden_size], name="updating_w_hh")
+			self._w_hh_update = tf.assign(self._w_hh, self._new_w_hh)
+
+			self._new_s = tf.placeholder(
+				tf.float32, shape=[config.hidden_size], name="new_s")
+			self._s_update = tf.assign(self._s, self._new_s)
 
 	def _build_rnn_graph_gru(self, inputs, config, is_training):
 		"""Build the inference graph using canonical LSTM cells."""
@@ -122,8 +153,35 @@ class PGEModel(object):
 		output = tf.reshape(tf.concat(outputs, 1), [-1, config.hidden_size])
 		return output, state	
 
+	def modify_w_hh(self, w, grad, s, lr, config):
+		f_norm = tf.norm(grad, ord='fro', axis=(0,1))
+		v_norm = tf.scalar_mul(lr*f_norm - config.threshold, tf.ones([config.hidden_size]))
+		s_est = tf.add(v_norm, s)
+		index = tf.count_nonzero(tf.sign(s_est) + 1)
+		u, st, v = svds(w, k=index)
+		st_count = tf.convert_to_tensor(st, dtype=tf.float32) - config.threshold
+		index = tf.count_nonzero(tf.sign(st_count) + 1)
+		st_len = len(st)
+		with tf.variable_scope('PGE_GRUCell'):
+			sc = tf.get_variable('s', [config.hidden_size])
+			sc = tf.concat(tf.convert_to_tensor(reversed(st), dtype=tf.float32), tf.slice(sc,[st_len],[config.hidden_size - st_len]))
+		submat = np.zeros((config.hidden_size, config.hidden_size))
+		u = map(list, zip(*u))
+		for i in range(index):
+			submat += (st[i]-2)*np.dot(np.expand_dims(u[i], axis=1),np.expand_dims(v[i], axis=0))
+		s_matrix = tf.convert_to_tensor(submat, dtype=tf.float32)
+		return tf.subtract(w, s_matrix)	
+
+
 	def assign_lr(self, session, lr_value):
 		session.run(self._lr_update, feed_dict={self._new_lr: lr_value})
+
+	def assign_w_hh(self, session, w_hh_value):
+		session.run(self._w_hh_last_update)
+		session.run(self._w_hh_update, feed_dict={self._new_w_hh: w_hh_value})
+		
+	def assign_s(self, session, s_value):
+		session.run(self._s_update, feed_dict={self._new_s: s_value})		
 
 	@property
 	def input(self):
@@ -148,9 +206,25 @@ class PGEModel(object):
 	@property
 	def train_op(self):
 		return self._train_op
+
+	@property
+	def w_hh(self):
+		return self._w_hh	
+
+	@property
+	def index(self):
+		return self._index	
+
+	@property
+	def s(self):
+		return self._s	
+
+	@property
+	def f_norm(self):
+		return self._f_norm			
 	
 
-def run_epoch(session, model, eval_op=None, verbose=False):
+def run_epoch(session, model, config, eval_op=None, verbose=False):
 	"""Runs the model on the given data."""
 	start_time = time.time()
 	costs = 0.0
@@ -162,7 +236,11 @@ def run_epoch(session, model, eval_op=None, verbose=False):
 		"final_state": model.final_state,
 	}
 	if eval_op is not None:
-		fetches["eval_op"] = eval_op
+		fetches["eval_op"] = eval_op[0]
+		fetches["w_hh"] = eval_op[1]
+		fetches["index"] = eval_op[2]
+		fetches["s"] = model.s
+		fetches["f_norm"] = model.f_norm
 
 	for step in range(model.input.epoch_size):
 		feed_dict = {}
@@ -172,6 +250,26 @@ def run_epoch(session, model, eval_op=None, verbose=False):
 		vals = session.run(fetches, feed_dict)
 		cost = vals["cost"]
 		state = vals["final_state"]
+
+		w = vals["w_hh"]
+		index = vals["index"]
+		# print(vals["s"][:10])
+		# print(cost)
+		if index > 0:
+			u, st, v = svds(w, k=index)
+			st_count = st - config.threshold
+			index = np.count_nonzero(np.sign(st_count) + 1)
+			st_len = len(st)
+			vals["s"] += [vals["f_norm"]]*len(vals["s"])
+			sc = list(reversed(st)) + list(vals["s"])[st_len:]
+			submat = np.zeros((config.hidden_size, config.hidden_size))
+			u = map(list, zip(*u))
+			for i in range(index):
+				submat += (st[i]-2)*np.dot(np.expand_dims(u[i], axis=1),np.expand_dims(v[i], axis=0))
+			modified_w = w - submat	
+			sc.sort(reverse=True)
+			model.assign_w_hh(session, modified_w)
+			model.assign_s(session, sc)
 
 		costs += cost
 		iters += model.input.num_steps
@@ -213,24 +311,27 @@ def main(_):
 
 		models = {"Train": m, "Valid": mvalid, "Test": mtest}
 
+		# for op in tf.all_variables():
+		# 	print str(op.name) 
 	
 		sv = tf.train.Supervisor(logdir="./log/")
 		config_proto = tf.ConfigProto(allow_soft_placement=False)
 		with sv.managed_session(config=config_proto) as session:
+			lr_decay = 1
 			for i in range(config.max_max_epoch):
-				lr_decay = config.lr_decay 
+				lr_decay = config.lr_decay*lr_decay 
 				if i < config.max_epoch:
 					lr_decay = 1.0
 				m.assign_lr(session, config.learning_rate/lr_decay)
 
 				print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
-				train_perplexity = run_epoch(session, m, eval_op=m.train_op,
+				train_perplexity = run_epoch(session, m, config, eval_op=[m.train_op, m.w_hh, m.index],
 											 verbose=True)
 				print("Epoch: %d Train Perplexity: %.3f" % (i + 1, train_perplexity))
-				valid_perplexity = run_epoch(session, mvalid)
+				valid_perplexity = run_epoch(session, mvalid, config)
 				print("Epoch: %d Valid Perplexity: %.3f" % (i + 1, valid_perplexity))
 
-			test_perplexity = run_epoch(session, mtest)
+			test_perplexity = run_epoch(session, mtest, config)
 			print("Test Perplexity: %.3f" % test_perplexity)	
 
 if __name__ == "__main__":
