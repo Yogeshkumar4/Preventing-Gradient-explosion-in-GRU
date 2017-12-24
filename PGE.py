@@ -259,7 +259,7 @@ def run_epoch(session, model, config, eval_op=None, verbose=False):
 		# print(vals["s"][:10])
 		# print(cost)
 		if index > 0:
-			u, st, v = svds(w, k=index)
+			u, st, v = svds(w, k=min(index, config.hidden_size - 1))
 			st_count = st - config.threshold
 			index = np.count_nonzero(np.sign(st_count) + 1)
 			st_len = len(st)
