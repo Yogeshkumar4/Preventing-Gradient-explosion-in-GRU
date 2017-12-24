@@ -260,19 +260,21 @@ def run_epoch(session, model, config, eval_op=None, verbose=False):
 		# print(cost)
 		if index > 0:
 			u, st, v = svds(w, k=min(index, config.hidden_size - 1))
-			st_count = st - config.threshold
-			index = np.count_nonzero(np.sign(st_count) + 1)
-			st_len = len(st)
-			vals["s"] += [vals["f_norm"]]*len(vals["s"])
-			sc = list(reversed(st)) + list(vals["s"])[st_len:]
-			submat = np.zeros((config.hidden_size, config.hidden_size))
 			u = list(map(list, zip(*u)))
-			for i in range(index):
-				submat += (st[i]-2)*np.dot(np.expand_dims(u[i], axis=1),np.expand_dims(v[i], axis=0))
-			modified_w = w - submat	
-			sc.sort(reverse=True)
-			model.assign_w_hh(session, modified_w)
-			model.assign_s(session, sc)
+		else:
+			st = np.asarray([])	
+		st_count = st - config.threshold
+		index = np.count_nonzero(np.sign(st_count) + 1)
+		st_len = len(st)
+		vals["s"] += [vals["f_norm"]]*len(vals["s"])
+		sc = list(reversed(st)) + list(vals["s"])[st_len:]
+		submat = np.zeros((config.hidden_size, config.hidden_size))
+		for i in range(index):
+			submat += (st[i]-2)*np.dot(np.expand_dims(u[i], axis=1),np.expand_dims(v[i], axis=0))
+		modified_w = w - submat	
+		sc.sort(reverse=True)
+		model.assign_w_hh(session, modified_w)
+		model.assign_s(session, sc)
 
 		costs += cost
 		iters += model.input.num_steps
