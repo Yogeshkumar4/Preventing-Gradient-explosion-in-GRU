@@ -266,7 +266,7 @@ def run_epoch(session, model, config, eval_op=None, verbose=False):
 			vals["s"] += [vals["f_norm"]]*len(vals["s"])
 			sc = list(reversed(st)) + list(vals["s"])[st_len:]
 			submat = np.zeros((config.hidden_size, config.hidden_size))
-			u = map(list, zip(*u))
+			u = list(map(list, zip(*u)))
 			for i in range(index):
 				submat += (st[i]-2)*np.dot(np.expand_dims(u[i], axis=1),np.expand_dims(v[i], axis=0))
 			modified_w = w - submat	
