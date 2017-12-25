@@ -90,9 +90,9 @@ class PGEModel(object):
 			w_hh = tf.get_variable('W_hh', [config.hidden_size, config.hidden_size])
 			sp, up, vt = tf.svd(w_hh, full_matrices=True)
 			s_gdelta = sp - config.threshold
-			self._index = tf.count_nonzero(tf.sign(s_gdelta) + 1)
+			self._index = tf.count_nonzero(tf.greater(s_gdelta, 0), dtype=tf.int32)
 			v_norm = tf.scalar_mul(config.threshold, tf.ones([self._index]))
-			sc = tf.concat(v_norm, tf.slice(sp,[self._index],[config.hidden_size - self._index]))
+			sc = tf.concat([v_norm, tf.slice(sp,[self._index],[config.hidden_size - self._index])], 0)
 			sc = tf.expand_dims(sc, 1)
 			sc = tf.tile(sc, [1, config.hidden_size])
 			w_hh = tf.matmul(up, sc*vt)
