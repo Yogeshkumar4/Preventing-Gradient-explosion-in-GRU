@@ -97,7 +97,7 @@ class PGEModel(object):
 			sc = tf.tile(sc, [config.hidden_size,1])
 			w_hh = tf.matmul(up, sc*vt)
 			self._w_hh = w_hh
-			self.sing, uk, vk = tf.svd(self._w_hh, full_matrices=True)
+			self._sing, uk, vk = tf.svd(self._w_hh, full_matrices=True)
 
 
 		# with tf.variable_scope('RNN/multi_rnn_cell/cell_0/PGE_GRUCell') as scope:
@@ -236,7 +236,7 @@ class PGEModel(object):
 
 	@property
 	def sing(self):
-		return self.sing			
+		return self._sing			
 	
 
 def run_epoch(session, model, config, eval_op=None, verbose=False):
