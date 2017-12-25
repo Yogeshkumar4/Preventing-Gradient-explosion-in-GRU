@@ -93,8 +93,8 @@ class PGEModel(object):
 			self._index = tf.count_nonzero(tf.greater(s_gdelta, 0), dtype=tf.int32)
 			v_norm = tf.scalar_mul(config.threshold, tf.ones([self._index]))
 			sc = tf.concat([v_norm, tf.slice(sp,[self._index],[config.hidden_size - self._index])], 0)
-			sc = tf.expand_dims(sc, 1)
-			sc = tf.tile(sc, [1, config.hidden_size])
+			sc = tf.expand_dims(sc, 0)
+			sc = tf.tile(sc, [config.hidden_size,1])
 			w_hh = tf.matmul(up, sc*vt)
 			self._w_hh = w_hh
 
