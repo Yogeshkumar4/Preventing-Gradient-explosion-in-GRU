@@ -97,6 +97,7 @@ class PGEModel(object):
 			sc = tf.tile(sc, [config.hidden_size,1])
 			w_hh = tf.matmul(up, sc*vt)
 			self._w_hh = w_hh
+			self.sing, uk, vk = tf.svd(self._w_hh, full_matrices=True)
 
 
 		# with tf.variable_scope('RNN/multi_rnn_cell/cell_0/PGE_GRUCell') as scope:
@@ -231,7 +232,11 @@ class PGEModel(object):
 
 	@property
 	def s(self):
-		return self.s_gdelta		
+		return self.s_gdelta
+
+	@property
+	def sing(self):
+		return self.sing			
 	
 
 def run_epoch(session, model, config, eval_op=None, verbose=False):
@@ -250,6 +255,7 @@ def run_epoch(session, model, config, eval_op=None, verbose=False):
 		fetches["w_hh"] = eval_op[1]
 		fetches["index"] = model.index
 		fetches["s"] = model.s
+		fetches["sing"] = model.sing
 		# fetches["f_norm"] = model.f_norm
 
 	for step in range(model.input.epoch_size):
@@ -260,8 +266,9 @@ def run_epoch(session, model, config, eval_op=None, verbose=False):
 		vals = session.run(fetches, feed_dict)
 		cost = vals["cost"]
 		state = vals["final_state"]
-		print(vals["s"])
-		print(vals["index"])
+		if int(vals["index"]) > 0:
+			print(vals["s"])
+			print(vals["sing"])
 		# try:
 		# 	w = vals["w_hh"]
 		# 	index = vals["index"]
