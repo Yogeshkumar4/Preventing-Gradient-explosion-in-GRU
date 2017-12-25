@@ -231,11 +231,7 @@ class PGEModel(object):
 
 	@property
 	def s(self):
-		return self.s_gdelta	
-
-	@property
-	def f_norm(self):
-		return self._f_norm			
+		return self.s_gdelta		
 	
 
 def run_epoch(session, model, config, eval_op=None, verbose=False):
