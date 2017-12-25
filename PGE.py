@@ -87,35 +87,49 @@ class PGEModel(object):
 
 		with tf.variable_scope('RNN/multi_rnn_cell/cell_0/PGE_GRUCell') as scope:
 			scope.reuse_variables()
-			self._w_hh = tf.get_variable('W_hh', [config.hidden_size, config.hidden_size])
-			w_hh_last = tf.get_variable('W_hh_last', [config.hidden_size, config.hidden_size])
-			grad = tf.subtract(w_hh_last, self._w_hh)
-			w_grads = tf.scalar_mul(1/self._lr, grad)
-			self._s = tf.get_variable('s', [config.hidden_size])
-			# s = tf.Print(s, [s])
-			self._f_norm = self._lr*tf.norm(w_grads, ord='fro', axis=(0,1))
-			v_norm = tf.scalar_mul(self._f_norm - config.threshold, tf.ones([config.hidden_size]))
-			s_est = tf.add(v_norm, self._s)
-			self._index = tf.count_nonzero(tf.sign(s_est) + 1)
-			# f_norm = tf.norm(w_grads, ord='fro', axis=(0,1))
-			# w_hh = self.modify_w_hh(w_hh, w_grads, s, self._lr, config)
-			# self.change_w_hh = w_hh
-			# self._train_op = tf.train.GradientDescentOptimizer(self._lr).minimize(self._cost)	
-			self._new_lr = tf.placeholder(
-				tf.float32, shape=[], name="new_learning_rate")
-			self._lr_update = tf.assign(self._lr, self._new_lr)
+			w_hh = tf.get_variable('W_hh', [config.hidden_size, config.hidden_size])
+			sp, up, vt = tf.svd(w_hh, full_matrices=True)
+			s_gdelta = sp - config.threshold
+			self._index = tf.count_nonzero(tf.sign(s_gdelta) + 1)
+			v_norm = tf.scalar_mul(config.threshold, tf.ones([self._index]))
+			sc = tf.concat(v_norm, tf.slice(sp,[self._index],[config.hidden_size - self._index]))
+			sc = tf.expand_dims(sc, 1)
+			sc = tf.tile(sc, [1, config.hidden_size])
+			w_hh = tf.matmul(up, sc*vt)
+			self._w_hh = w_hh
 
-			# with tf.variable_scope('PGE_GRUCell'):
-			# 	w_hh = tf.get_variable('W_hh', [config.hidden_size, config.hidden_size])
-			# 	s = tf.get_variable('s', [config.hidden_size])
-			self._w_hh_last_update = tf.assign(w_hh_last, self._w_hh)
-			self._new_w_hh = tf.placeholder(
-				tf.float32, shape=[config.hidden_size, config.hidden_size], name="updating_w_hh")
-			self._w_hh_update = tf.assign(self._w_hh, self._new_w_hh)
 
-			self._new_s = tf.placeholder(
-				tf.float32, shape=[config.hidden_size], name="new_s")
-			self._s_update = tf.assign(self._s, self._new_s)
+		# with tf.variable_scope('RNN/multi_rnn_cell/cell_0/PGE_GRUCell') as scope:
+		# 	scope.reuse_variables()
+		# 	self._w_hh = tf.get_variable('W_hh', [config.hidden_size, config.hidden_size])
+		# 	w_hh_last = tf.get_variable('W_hh_last', [config.hidden_size, config.hidden_size])
+		# 	grad = tf.subtract(w_hh_last, self._w_hh)
+		# 	w_grads = tf.scalar_mul(1/self._lr, grad)
+		# 	self._s = tf.get_variable('s', [config.hidden_size])
+		# 	# s = tf.Print(s, [s])
+		# 	self._f_norm = self._lr*tf.norm(w_grads, ord='fro', axis=(0,1))
+		# 	v_norm = tf.scalar_mul(self._f_norm - config.threshold, tf.ones([config.hidden_size]))
+		# 	s_est = tf.add(v_norm, self._s)
+		# 	self._index = tf.count_nonzero(tf.sign(s_est) + 1)
+		# f_norm = tf.norm(w_grads, ord='fro', axis=(0,1))
+		# w_hh = self.modify_w_hh(w_hh, w_grads, s, self._lr, config)
+		# self.change_w_hh = w_hh
+		# self._train_op = tf.train.GradientDescentOptimizer(self._lr).minimize(self._cost)	
+		self._new_lr = tf.placeholder(
+			tf.float32, shape=[], name="new_learning_rate")
+		self._lr_update = tf.assign(self._lr, self._new_lr)
+
+		# with tf.variable_scope('PGE_GRUCell'):
+		# 	w_hh = tf.get_variable('W_hh', [config.hidden_size, config.hidden_size])
+		# 	s = tf.get_variable('s', [config.hidden_size])
+		# self._w_hh_last_update = tf.assign(w_hh_last, self._w_hh)
+		# self._new_w_hh = tf.placeholder(
+		# 	tf.float32, shape=[config.hidden_size, config.hidden_size], name="updating_w_hh")
+		# self._w_hh_update = tf.assign(self._w_hh, self._new_w_hh)
+
+		# self._new_s = tf.placeholder(
+		# 	tf.float32, shape=[config.hidden_size], name="new_s")
+		# self._s_update = tf.assign(self._s, self._new_s)
 
 	def _build_rnn_graph_gru(self, inputs, config, is_training):
 		"""Build the inference graph using canonical LSTM cells."""
@@ -238,9 +252,9 @@ def run_epoch(session, model, config, eval_op=None, verbose=False):
 	if eval_op is not None:
 		fetches["eval_op"] = eval_op[0]
 		fetches["w_hh"] = eval_op[1]
-		fetches["index"] = eval_op[2]
-		fetches["s"] = model.s
-		fetches["f_norm"] = model.f_norm
+		# fetches["index"] = eval_op[2]
+		# fetches["s"] = model.s
+		# fetches["f_norm"] = model.f_norm
 
 	for step in range(model.input.epoch_size):
 		feed_dict = {}
@@ -251,29 +265,29 @@ def run_epoch(session, model, config, eval_op=None, verbose=False):
 		cost = vals["cost"]
 		state = vals["final_state"]
 
-		try:
-			w = vals["w_hh"]
-			index = vals["index"]
-			if index > 0:
-				u, st, v = svds(w, k=min(index, config.hidden_size - 1))
-				u = list(map(list, zip(*u)))
-			else:
-				st = np.asarray([])	
-			st_count = st - config.threshold
-			index = np.count_nonzero(np.sign(st_count) + 1)
-			st_len = len(st)
-			vals["s"] += [vals["f_norm"]]*len(vals["s"])
-			sc = list(reversed(st)) + list(vals["s"])[st_len:]
-			submat = np.zeros((config.hidden_size, config.hidden_size))
-			for i in range(index):
-				submat += (st[i]-2)*np.dot(np.expand_dims(u[i], axis=1),np.expand_dims(v[i], axis=0))
-			modified_w = w - submat	
-			sc.sort(reverse=True)
-			model.assign_w_hh(session, modified_w)
-			model.assign_s(session, sc)
-			
-		except KeyError:
-			pass
+		# try:
+		# 	w = vals["w_hh"]
+		# 	index = vals["index"]
+		# 	if index > 0:
+		# 		u, st, v = svds(w, k=min(index, config.hidden_size - 1))
+		# 		u = list(map(list, zip(*u)))
+		# 	else:
+		# 		st = np.asarray([])	
+		# 	st_count = st - config.threshold
+		# 	index = np.count_nonzero(np.sign(st_count) + 1)
+		# 	st_len = len(st)
+		# 	vals["s"] += [vals["f_norm"]]*len(vals["s"])
+		# 	sc = list(reversed(st)) + list(vals["s"])[st_len:]
+		# 	submat = np.zeros((config.hidden_size, config.hidden_size))
+		# 	for i in range(index):
+		# 		submat += (st[i]-2)*np.dot(np.expand_dims(u[i], axis=1),np.expand_dims(v[i], axis=0))
+		# 	modified_w = w - submat	
+		# 	sc.sort(reverse=True)
+		# 	model.assign_w_hh(session, modified_w)
+		# 	model.assign_s(session, sc)
+
+		# except KeyError:
+		# 	pass
 		# print(vals["s"][:10])
 		# print(cost)
 
@@ -331,7 +345,7 @@ def main(_):
 				m.assign_lr(session, config.learning_rate/lr_decay)
 
 				print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
-				train_perplexity = run_epoch(session, m, config, eval_op=[m.train_op, m.w_hh, m.index],
+				train_perplexity = run_epoch(session, m, config, eval_op=[m.train_op, m.w_hh],
 											 verbose=True)
 				print("Epoch: %d Train Perplexity: %.3f" % (i + 1, train_perplexity))
 				valid_perplexity = run_epoch(session, mvalid, config)
