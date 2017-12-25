@@ -4,7 +4,7 @@ from PGE_GRU_Cell import PGE_GRUCell
 import reader
 import numpy as np
 from scipy.sparse.linalg import svds
-import time
+import time, sys
 
 class PTBInput(object):
 	"""The input data."""
@@ -80,6 +80,8 @@ class PGEModel(object):
 
 		self._lr = tf.Variable(0.0, trainable=False)
 
+
+
 		tvars = tf.trainable_variables()
 		grads = tf.gradients(self._cost, tvars)
 		optimizer = tf.train.GradientDescentOptimizer(self._lr)
@@ -95,9 +97,9 @@ class PGEModel(object):
 			sc = tf.concat([v_norm, tf.slice(sp,[self._index],[config.hidden_size - self._index])], 0)
 			sc = tf.expand_dims(sc, 0)
 			sc = tf.tile(sc, [config.hidden_size,1])
-			w_hh = tf.matmul(up, sc*vt)
-			self._w_hh = w_hh
-			self._sing, uk, vk = tf.svd(self._w_hh, full_matrices=True)
+			w_hh_temp = tf.matmul(up, sc*vt)
+			self._w_hh = tf.assign(w_hh, w_hh_temp)
+			# self._sing, uk, vk = tf.svd(self._w_hh, full_matrices=True)
 
 
 		# with tf.variable_scope('RNN/multi_rnn_cell/cell_0/PGE_GRUCell') as scope:
@@ -253,9 +255,9 @@ def run_epoch(session, model, config, eval_op=None, verbose=False):
 	if eval_op is not None:
 		fetches["eval_op"] = eval_op[0]
 		fetches["w_hh"] = eval_op[1]
-		fetches["index"] = model.index
-		fetches["s"] = model.s
-		fetches["sing"] = model.sing
+		# fetches["index"] = model.index
+		# fetches["s"] = model.s
+		# fetches["sing"] = model.sing
 		# fetches["f_norm"] = model.f_norm
 
 	for step in range(model.input.epoch_size):
@@ -266,10 +268,22 @@ def run_epoch(session, model, config, eval_op=None, verbose=False):
 		vals = session.run(fetches, feed_dict)
 		cost = vals["cost"]
 		state = vals["final_state"]
-		if int(vals["index"]) > 0:
-			print(vals["s"])
-			print(vals["sing"])
 		# try:
+		# 	if int(vals["index"]) > 0:
+		# 		print(vals["s"])
+		# 		print(vals["sing"])
+		# except:
+		# 	pass	
+		# print(vals["w_hh"])
+		# allVars = tf.global_variables()
+		# allVars = [v for v in allVars if 'W_hh' in str(v.name) ]
+		# values = session.run(allVars)
+
+		# for var, val in zip(allVars, values):
+		# 	print(var.name, val)
+		# print("------------------------------------------------------")	
+		# sys.stdout.flush()
+		# # try:
 		# 	w = vals["w_hh"]
 		# 	index = vals["index"]
 		# 	if index > 0:
