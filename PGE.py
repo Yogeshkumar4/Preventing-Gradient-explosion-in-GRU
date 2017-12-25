@@ -89,8 +89,8 @@ class PGEModel(object):
 			scope.reuse_variables()
 			w_hh = tf.get_variable('W_hh', [config.hidden_size, config.hidden_size])
 			sp, up, vt = tf.svd(w_hh, full_matrices=True)
-			s_gdelta = sp - config.threshold
-			self._index = tf.count_nonzero(tf.greater(s_gdelta, 0), dtype=tf.int32)
+			self.s_gdelta = sp - config.threshold
+			self._index = tf.count_nonzero(tf.greater(self.s_gdelta, tf.zeros([config.hidden_size])), dtype=tf.int32)
 			v_norm = tf.scalar_mul(config.threshold, tf.ones([self._index]))
 			sc = tf.concat([v_norm, tf.slice(sp,[self._index],[config.hidden_size - self._index])], 0)
 			sc = tf.expand_dims(sc, 0)
@@ -231,7 +231,7 @@ class PGEModel(object):
 
 	@property
 	def s(self):
-		return self._s	
+		return self.s_gdelta	
 
 	@property
 	def f_norm(self):
@@ -252,8 +252,8 @@ def run_epoch(session, model, config, eval_op=None, verbose=False):
 	if eval_op is not None:
 		fetches["eval_op"] = eval_op[0]
 		fetches["w_hh"] = eval_op[1]
-		# fetches["index"] = eval_op[2]
-		# fetches["s"] = model.s
+		fetches["index"] = model.index
+		fetches["s"] = model.s
 		# fetches["f_norm"] = model.f_norm
 
 	for step in range(model.input.epoch_size):
@@ -264,7 +264,8 @@ def run_epoch(session, model, config, eval_op=None, verbose=False):
 		vals = session.run(fetches, feed_dict)
 		cost = vals["cost"]
 		state = vals["final_state"]
-
+		print(vals["s"])
+		print(vals["index"])
 		# try:
 		# 	w = vals["w_hh"]
 		# 	index = vals["index"]
