@@ -141,9 +141,8 @@ class PGEModel(object):
 		# different than reported in the paper.
 		def make_cell():
 			cell = PGE_GRUCell(config.hidden_size, config.hidden_size)	
-			# if is_training and config.keep_prob < 1:
-			# 	cell = tf.contrib.rnn.DropoutWrapper(
-			# 		cell, output_keep_prob=config.keep_prob)
+			if is_training and config.keep_prob < 1:
+				cell = tf.nn.rnn_cell.DropoutWrapper(cell, output_keep_prob=config.keep_prob)
 			return cell
 
 		cell = tf.contrib.rnn.MultiRNNCell(
