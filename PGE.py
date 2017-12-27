@@ -25,7 +25,7 @@ class Config(object):
 	hidden_size = 650
 	max_epoch = 10
 	max_max_epoch = 75
-	max_grad_norm = 5
+	max_grad_norm = 10
 	keep_prob = 0.5
 	lr_decay = 1.1
 	batch_size = 20
@@ -52,9 +52,6 @@ class PGEModel(object):
 			inputs = tf.nn.dropout(inputs, config.keep_prob)
 
 		output, state = self._build_rnn_graph_gru(inputs, config, is_training)
-
-		if is_training and config.keep_prob < 1:
-			output = tf.nn.dropout(output, config.keep_prob)
 
 		softmax_w = tf.get_variable(
 			"softmax_w", [size, vocab_size], dtype=tf.float32)
@@ -83,7 +80,7 @@ class PGEModel(object):
 
 
 		tvars = tf.trainable_variables()
-		grads = tf.gradients(self._cost, tvars)
+		grads, _ = tf.clip_by_norm(tf.gradients(self._cost, tvars), config.max_grad_norm)
 		optimizer = tf.train.GradientDescentOptimizer(self._lr)
 		self._train_op = optimizer.apply_gradients(zip(grads, tvars),global_step=tf.train.get_or_create_global_step())
 
@@ -253,7 +250,7 @@ def run_epoch(session, model, config, eval_op=None, verbose=False):
 	}
 	if eval_op is not None:
 		fetches["eval_op"] = eval_op[0]
-		fetches["w_hh"] = eval_op[1]
+		# fetches["w_hh"] = eval_op[1]
 		# fetches["index"] = model.index
 		# fetches["s"] = model.s
 		# fetches["sing"] = model.sing
